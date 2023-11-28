@@ -43,14 +43,17 @@ namespace DesignCheck.Controllers
         private const string APPBUNBLENAME = "FindColumnsIO.zip";
         private const string ACTIVITY_NAME = "FindColumnsActivity";
         protected string Script { get; set; }
-        private const string ENGINE_NAME = "Autodesk.Revit+2019";
-
+        private const string ENGINE_NAME = "Autodesk.Revit+2022";
+        public const string NickName = "chuong";
         /// NickName.AppBundle+Alias
-        private string AppBundleFullName { get { return string.Format("{0}.{1}+{2}", Utils.NickName, APPNAME, Alias); } }
+        private string AppBundleFullName => $"{NickName}.{APPNAME}+{Alias}";
+
         /// NickName.Activity+Alias
-        private string ActivityFullName { get { return string.Format("{0}.{1}+{2}", Utils.NickName, ACTIVITY_NAME, Alias); } }
-        /// Prefix for AppBundles and Activities
-        public static string NickName { get { return Credentials.GetAppSetting("FORGE_CLIENT_ID"); } }
+        // private string ActivityFullName => $"{Utils.NickName}.{ACTIVITY_NAME}+{Alias}";
+        private string ActivityFullName => $"{NickName}.{ACTIVITY_NAME}+{Alias}";
+        //
+        // /// Prefix for AppBundles and Activities
+        // public static string NickName { get { return Credentials.GetAppSetting("APS_CLIENT_ID"); } }
         /// Alias for the app (e.g. DEV, STG, PROD). This value may come from an environment variable
         public static string Alias { get { return "dev"; } }
         // Design Automation v3 API
@@ -77,6 +80,7 @@ namespace DesignCheck.Controllers
         public async Task EnsureAppBundle(string contentRootPath)
         {
             // get the list and check for the name
+            Console.WriteLine("Retrieving app bundles");
             Page<string> appBundles = await _designAutomation.GetAppBundlesAsync();
             bool existAppBundle = false;
             foreach (string appName in appBundles.Data)
@@ -84,13 +88,15 @@ namespace DesignCheck.Controllers
                 if (appName.Contains(AppBundleFullName))
                 {
                     existAppBundle = true;
-                    continue;
+                    Console.WriteLine("Found existing app bundle: " + appName);
+                    break;
                 }
             }
 
             if (!existAppBundle)
             {
                 // check if ZIP with bundle is here
+                Console.WriteLine("Start Create new app bundle");
                 string packageZipPath = Path.Combine(contentRootPath + "/bundles/", APPBUNBLENAME);
                 if (!File.Exists(packageZipPath)) throw new Exception(APPBUNBLENAME +" not found at " + packageZipPath);
 
@@ -99,16 +105,16 @@ namespace DesignCheck.Controllers
                     Package = APPNAME,
                     Engine = ENGINE_NAME,
                     Id = APPNAME,
-                    Description = string.Format("Description for {0}", APPBUNBLENAME),
+                    Description = $"Description for {APPBUNBLENAME}",
 
                 };
                 AppBundle newAppVersion = await _designAutomation.CreateAppBundleAsync(appBundleSpec);
                 if (newAppVersion == null) throw new Exception("Cannot create new app");
-
+                Console.WriteLine("Created new bundle: " + newAppVersion.Appbundles);
                 // create alias pointing to v1
                 Alias aliasSpec = new Alias() { Id = Alias, Version = 1 };
                 Alias newAlias = await _designAutomation.CreateAppBundleAliasAsync(APPNAME, aliasSpec);
-
+                Console.WriteLine("Created new alias version: " + newAppVersion.Version);
                 // upload the zip with .bundle
                 RestClient uploadClient = new RestClient(newAppVersion.UploadParameters.EndpointURL);
                 RestRequest request = new RestRequest(string.Empty, Method.POST);
@@ -117,19 +123,21 @@ namespace DesignCheck.Controllers
                 request.AddFile("file", packageZipPath);
                 request.AddHeader("Cache-Control", "no-cache");
                 await uploadClient.ExecuteAsync(request);
+                Console.WriteLine("Uploaded app bundle: " + packageZipPath);
             }
         }
 
         public async Task EnsureActivity()
         {
+            Console.WriteLine("Retrieving activity");
             Page<string> activities = await _designAutomation.GetActivitiesAsync();
-
             bool existActivity = false;
             foreach (string activity in activities.Data)
             {
                 if (activity.Contains(ActivityFullName))
                 {
                     existActivity = true;
+                    Console.WriteLine("Found existing activity: " + activity);
                     continue;
                 }
             }
@@ -151,13 +159,15 @@ namespace DesignCheck.Controllers
                     Settings = new Dictionary<string, ISetting>()
                     {
                         { "script", new StringSetting(){ Value = Script } }
-                    }
+                    },
+                    Description = "Description for activity FindColumnsActivity",
                 };
                 Activity newActivity = await _designAutomation.CreateActivityAsync(activitySpec);
-
+                Console.WriteLine("Created new activity: " + newActivity.Id);
                 // specify the alias for this Activity
                 Alias aliasSpec = new Alias() { Id = Alias, Version = 1 };
                 Alias newAlias = await _designAutomation.CreateActivityAliasAsync(ACTIVITY_NAME, aliasSpec);
+                Console.WriteLine("Created new alias for activity Version:{0} ID{1}: " + newAlias.Version + newAlias.Id);
             }
         }
 
@@ -172,7 +182,7 @@ namespace DesignCheck.Controllers
             string[] bucketKeyParams = versionItemParams[versionItemParams.Length - 2].Split(':');
             string bucketKey = bucketKeyParams[bucketKeyParams.Length - 1];
             string objectName = versionItemParams[versionItemParams.Length - 1];
-            string downloadUrl = string.Format("https://developer.api.autodesk.com/oss/v2/buckets/{0}/objects/{1}", bucketKey, objectName);
+            string downloadUrl = $"https://developer.api.autodesk.com/oss/v2/buckets/{bucketKey}/objects/{objectName}";
 
             return new XrefTreeArgument()
             {
@@ -208,30 +218,41 @@ namespace DesignCheck.Controllers
             };
         }
 
-        public async Task StartDesignCheck(string userId, string hubId, string projectId, string versionId, string contentRootPath)
+        public async Task StartDesignCheck(string projectId, string versionId, string contentRootPath)
         {
             // uncomment these lines to clear all appbundles & activities under your account
             //await _designAutomation.DeleteForgeAppAsync("me");
 
-            Credentials credentials = await Credentials.FromDatabaseAsync(userId);
+            dynamic credentials = await Credentials.Get2LeggedTokenAsync(new Scope[] {Scope.DataRead, Scope.CodeAll, Scope.DataWrite});
+            // Credentials credentials = await Credentials.FromDatabaseAsync(userId);
 
             await EnsureAppBundle(contentRootPath);
             await EnsureActivity();
 
             string resultFilename = versionId.Base64Encode() + ".txt";
-            string callbackUrl = string.Format("{0}/api/aps/callback/designautomation/{1}/{2}/{3}/{4}", Credentials.GetAppSetting("APS_WEBHOOK_URL"), userId, hubId, projectId, versionId.Base64Encode());
-
+            // string callbackUrl =
+            //     $"{Credentials.GetAppSetting("APS_WEBHOOK_URL")}/api/aps/callback/designautomation/{userId}/{hubId}/{projectId}/{versionId.Base64Encode()}";
+            string callbackUrl = "https://webhook.site/25ad18c1-2f09-4148-bfd1-2c9cd2618a9b";
+            Console.WriteLine("ActivityId: " + ActivityFullName);
+            dynamic downloadUrl = await BuildDownloadURL(credentials.access_token, projectId, versionId);
+            Console.WriteLine("Download URL: " + downloadUrl.Url);
+            var treeArgument = await BuildUploadURL(resultFilename);
+            Console.WriteLine("TreeArgument: " + treeArgument.Url);
+            Console.WriteLine("Start  Create a workItem");
             WorkItem workItemSpec = new WorkItem()
             {
                 ActivityId = ActivityFullName,
                 Arguments = new Dictionary<string, IArgument>()
                 {
-                    { "inputFile", await BuildDownloadURL(credentials.TokenInternal, projectId, versionId) },
-                    { "result",  await BuildUploadURL(resultFilename) },
+                    { "inputFile", downloadUrl },
+                    { "result",  treeArgument },
                     { "onComplete", new XrefTreeArgument { Verb = Verb.Post, Url = callbackUrl } }
                 }
             };
+            Console.WriteLine("Start Create WorkItem");
             WorkItemStatus workItemStatus = await _designAutomation.CreateWorkItemAsync(workItemSpec);
+            Console.WriteLine("WorkItemStatus: " + workItemStatus.Status);
+            Console.WriteLine("Working Item Id: " + workItemStatus.Id);
         }
     }
 }

@@ -39,7 +39,7 @@ namespace DesignCheck.Controllers
         private Credentials Credentials { get; set; }
 
         // with the api/aps/callback/webhook endpoint
-        // e.g. local testing with http://1234.ngrok.io/api/aps/callback/webhook
+            // e.g. local testing with http://1234.ngrok.io/api/aps/callback/webhook
         public string CallbackUrl
         {
             get
@@ -130,6 +130,7 @@ namespace DesignCheck.Controllers
             // catch any errors, we don't want to return 500
             try
             {
+                Console.WriteLine("Start WebhookCallback");
                 string eventType = body["hook"]["event"].ToString();
                 string userId = body["hook"]["createdBy"].ToString();
                 string projectId = body["hook"]["hookAttribute"]["projectId"].ToString();
@@ -137,7 +138,8 @@ namespace DesignCheck.Controllers
                 string versionId = body["resourceUrn"].ToString();
 
                 // do you want to filter events??
-                if (eventType != "dm.version.added") return Ok();
+                Console.WriteLine("EventType", eventType);
+                if (eventType != "dm.version.modified") return await Task.FromResult<IActionResult>(Ok());
 
                 // your webhook should return immediately!
                 // so can start a second thread (not good) or use a queueing system (e.g. hangfire)
@@ -149,27 +151,31 @@ namespace DesignCheck.Controllers
                       // your code here
                   }).Start();
                 */
-
+                await StartDesignCheck(projectId, versionId, _env.WebRootPath);
                 // use Hangfire to schedule a job
-                BackgroundJob.Schedule(() => StartDesignCheck(userId, hubId, projectId, versionId, _env.WebRootPath), TimeSpan.FromSeconds(1));
+                // BackgroundJob.Schedule(() => StartDesignCheck(userId, hubId, projectId, versionId, _env.WebRootPath),
+                //     TimeSpan.FromSeconds(1));
             }
-            catch { }
+            catch(Exception e)
+            {
+                Console.WriteLine(e);
+            }
 
             // ALWAYS return ok (200)
-            return Ok();
+            return await Task.FromResult<IActionResult>(Ok());
         }
 
-        public async static Task StartDesignCheck(string userId, string hubId, string projectId, string versionId, string contentRootPath)
+        public static async Task StartDesignCheck(string projectId, string versionId, string contentRootPath)
         {
             try
             {
                 DesignAutomation4Revit daRevit = new DesignAutomation4Revit();
-                await daRevit.StartDesignCheck(userId, hubId, projectId, versionId, contentRootPath);
+                await daRevit.StartDesignCheck(projectId, versionId, contentRootPath);
             }
             catch (Exception e)
             {
                 Console.WriteLine(e);
-                throw; // this should force Hangfire to try again 
+                throw; // this should force Hangfire to try again
             }
         }
     }

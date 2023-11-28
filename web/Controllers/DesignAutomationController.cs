@@ -52,7 +52,7 @@ namespace DesignCheck.Controllers
                 */
 
                 // use Hangfire to schedule a job
-                BackgroundJob.Schedule(() => CreateIssues(userId, hubId, projectId, versionId, _env.WebRootPath, Request.Host.ToString()), TimeSpan.FromSeconds(1));
+                BackgroundJob.Schedule(() => CreateIssues(hubId, projectId, versionId, Request.Host.ToString()), TimeSpan.FromSeconds(1));
             }
             catch { }
 
@@ -60,7 +60,7 @@ namespace DesignCheck.Controllers
             return Ok();
         }
 
-        public async Task CreateIssues(string userId, string hubId, string projectId, string versionId, string contentRootPath, string host)
+        public async Task CreateIssues(string hubId, string projectId, string versionId, string host)
         {
             string bucketName = "revitdesigncheck" + DesignAutomation4Revit.NickName.ToLower();
             string resultFilename = versionId + ".txt";
@@ -83,8 +83,8 @@ namespace DesignCheck.Controllers
                 //couldn't download the file
                 return;
             }
-            
-            Credentials credentials = await Credentials.FromDatabaseAsync(userId);
+
+           Credentials credentials = await Credentials.Get2LeggedTokenAsync(new Scope[] {Scope.DataRead,Scope.DataWrite,Scope.CodeAll});
 
             VersionsApi versionApi = new VersionsApi();
             versionApi.Configuration.AccessToken = credentials.TokenInternal;

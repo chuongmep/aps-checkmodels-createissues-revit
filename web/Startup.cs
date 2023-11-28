@@ -24,6 +24,7 @@ namespace DesignCheck
             // memory storage of jobs
             services.AddHangfire(x => x.UseMemoryStorage());
             services.AddMvc(options => options.EnableEndpointRouting = false).SetCompatibilityVersion(CompatibilityVersion.Version_3_0).AddNewtonsoftJson();
+            services.AddSwaggerGen();
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -32,6 +33,8 @@ namespace DesignCheck
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
+                app.UseSwagger();
+                app.UseSwaggerUI();
             }
             else
             {
@@ -55,6 +58,15 @@ namespace DesignCheck
             });
             app.UseHangfireDashboard();
             app.UseHangfireServer();
+            // use cookie authentication
+            app.UseCookiePolicy(new CookiePolicyOptions
+            {
+                HttpOnly = Microsoft.AspNetCore.CookiePolicy.HttpOnlyPolicy.Always,
+                Secure = Microsoft.AspNetCore.Http.CookieSecurePolicy.Always
+            });
+            // allow cross origin
+            app.UseCors(builder => builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+
         }
     }
 

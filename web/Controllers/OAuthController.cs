@@ -201,7 +201,7 @@ namespace DesignCheck.Controllers
         /// Refresh the credentials (internal & external)
         /// </summary>
         /// <returns></returns>
-        private async Task RefreshAsync()
+        public async Task RefreshAsync()
         {
             ThreeLeggedApi oauth = new ThreeLeggedApi();
 
@@ -217,9 +217,6 @@ namespace DesignCheck.Controllers
             TokenPublic = credentialPublic.access_token;
             RefreshToken = credentialPublic.refresh_token;
             ExpiresAt = DateTime.Now.AddSeconds(credentialInternal.expires_in);
-
-            // update the record on our database for the tokens and refresh token
-            await OAuthDB.Register(await GetUserId(this), JsonConvert.SerializeObject(this));
         }
 
         /// <summary>
